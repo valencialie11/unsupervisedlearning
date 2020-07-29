@@ -1,0 +1,152 @@
+---
+title: "PCA Reduction and K-Means Clustering"
+author: "Valencia Lie"
+date: "30/07/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Spotify Clustering 
+In this report, I will attempt to do PCA reduction on this Spotify dataset and cluster each song afterwards based on their characteristics.
+
+# Structure of this report
+- Read data and basic pre-processing
+- PCA reduction:
+  - Insights on summary and plot of PCA
+  - Uses of PCA
+  - Return as dataframe
+- Clustering using K-Means:
+  - Finding optimum K
+  - Evaluation of Cluster
+  - Purpose of clustering:
+    1. Cluster Profiling
+    2. product recommendation
+  
+# Read data and basic pre-processing
+I will take only the first 10000 rows because the huge amount of data requires too much computation and my laptop cannot handle it very well. 
+
+```{r warning = FALSE, message=FALSE}
+library(tidyverse)
+spotify <- read_csv("SpotifyFeatures.csv")
+spotify10000 <- head(spotify, 10000)
+```
+  
+```{r}
+spotify_clean <- spotify10000 %>% 
+  mutate_if(is.character, as.factor) %>% 
+  mutate(track_name = as.character(track_name)) %>% 
+  select(-track_id)
+
+```
+
+
+```{r}
+spotify_number <- spotify_clean %>% 
+  select_if(is.numeric)
+```
+
+#PCA reduction
+
+```{r warning=FALSE, message=FALSE}
+library(FactoMineR)
+spotify_pca <- PCA(spotify_number, scale.unit = TRUE, graph = FALSE)
+spotify_pca2 <- prcomp(spotify_number, scale. = T)
+```
+
+
+##Insights of PCA and plot of PCA
+```{r}
+summary(spotify_pca)
+spotify_pca2$rotation
+spotify_pca2$sdev
+```
+
+Based on the summary above, we can tell that for us to have at least 80% of data (which means 20% loss of data), we need at least 7 PCs (PC1 + PC2 +... PC7).
+
+We can also tell that the columns has different weightage in terms of affecting each PC. `Energy` affects PC1 the most (0.560640684), whereas `danceability` affects PC2 the most (0.67150434) and so on.
+
+We are also able to tell the eigen value of each PC. PC1 has the highest eigen value of 2.711, PC2 has the second highest eigen value of 1.526, followed by PC3 with 1.191, and so on. This directly corresponds to the amount of data it carries. Since PC1 has the highest eigen value, it also contribute the most data in terms of percentage (24.650%), followed by PC2 (13.871%) and PC3 (10.825%).
+
+```{r fig.height=10, fig.width=10}
+plot.PCA(x = spotify_pca, choix = c("ind"), select = "contrib7", habillage = "ind")
+```
+
+Based on the plot above, we can tell that there are several outliers such as data with the index of 343, 97, 451, 471, 284, 133 and 6305. We can further analyse the outliers and see whether the outlier affects PC1 more or PC2 more. For example, data with the index of 6305 and 343 affect PC1 more than PC2 (as seen in its position and the scale of both axes), whereas data with the index of 133 affects PC2 more than PC1. 
+
+Next we can analyse the effects of each columns on the PCs.
+
+```{r}
+plot.PCA(spotify_pca, cex=0.6, choix = c("var"))
+```
+
+```{r}
+a <- dimdesc(spotify_pca)
+
+as.data.frame(a[[1]]$quanti) #correlation to PC1
+as.data.frame(a[[2]]$quanti) #correlation to PC2
+```
+
+Based on the plot and dataframe above, acousticness, danceability and valence affect PC2 more than PC1, whereas energy, loudness, popularity and tempo affect PC1 more than PC2. From here, we can also tell the collinearity between columns. Energy and loudness have very high positive collinearity whereas popularity and acousticness has very high negative collinearity. This can be seen through the relative position and direction to each column name on the plot. 
+
+##Uses of PCA
+
+Besides just to reduce the dimension of data without much loss of the data itself, PCA can be used to tackle the no-multicollinearity assumption needed for predictors when making a linear regression model. This is because by doing PCA, columns (that contain the PCA value) would no longer be collinear to each other. 
+
+Below is an example:
+```{r}
+library(GGally)
+ggcorr(spotify_number, label = T)
+```
+
+We can see from the plot above that several columns have very high collinearity to each other. For example, loudness and energy has very high positive collinearity (0.8) and energy and acousticness has very high negative collinearity (-0.7). If we were to make a linear regression model out of this dataset, we might not be able to fulfill the assumption of no-multicollinearity between predictors.
+
+Hence, one way to solve this issue would be to do PCA on the data and use that result instead of the original numerical values.
+
+```{r}
+ggcorr(data.frame(spotify_pca2$x), label = T)
+```
+
+As we can see, there is 0 correlation between the PCs, allowing it to fulfill no multicollinearity if it were to be made into a linear regression model. However, there is a caveat: once it is made into a bunch of PCs, we would not be able to interpret the numbers anymore, so use this method sparingly and accordingly.
+
+## Return as dataframe
+Since we have decided to accomodate for 20% loss of data, I will subset only the first 7 PCs and return it into a dataframe with the non-numerical data.
+
+```{r}
+pca_keep <- spotify_pca2$x[,c(1:7)] %>% 
+  as.data.frame()
+
+spotify_final <- spotify_clean %>% 
+  select_if(negate(is.numeric)) %>% 
+  bind_cols(pca_keep)
+
+head(spotify_final)
+```
+
+#Clustering using K-Means
+
+We will now cluster the songs based on their characteristics into several clusters.
+
+```{r}
+spotify_cluster <- spotify_clean %>% 
+  select(-track_name)
+
+summary(spotify_cluster)
+```
+
+Since the ranges between each column to another varies a lot (max of duration_ms is 3631469 while max of valence is 0.9830), we need to scale the data.
+
+```{r}
+
+```
+
+##Finding Optimum K
+```{r}
+
+```
+
+
+
+
