@@ -2,7 +2,13 @@
 title: "PCA Reduction and K-Means Clustering"
 author: "Valencia Lie"
 date: "30/07/2020"
-output: html_document
+output: 
+  rmdformats::readthedown:
+    highlight: kate
+    toc: 6
+    number_sections: true
+    df_print: paged
+
 ---
 
 ```{r setup, include=FALSE}
@@ -19,18 +25,19 @@ In this report, I will attempt to do PCA reduction on this Spotify dataset and c
   - Uses of PCA
   - Return as dataframe
 - Clustering using K-Means:
-  - Finding optimum K
-  - Evaluation of Cluster
+  - Finding optimum K using elbow method
+  - Clustering and evaluation of cluster
+  - Tuning cluster
   - Purpose of clustering:
     1. Cluster Profiling
-    2. product recommendation
+    2. Song Recommendation
   
 # Read data and basic pre-processing
 I will take only the first 10000 rows because the huge amount of data requires too much computation and my laptop cannot handle it very well. 
 
 ```{r warning = FALSE, message=FALSE}
 library(tidyverse)
-spotify <- read_csv("SpotifyFeatures.csv")
+spotify <- read.csv("SpotifyFeatures.csv", row.names=NULL)
 spotify10000 <- head(spotify, 10000)
 ```
   
@@ -130,23 +137,131 @@ head(spotify_final)
 We will now cluster the songs based on their characteristics into several clusters.
 
 ```{r}
-spotify_cluster <- spotify_clean %>% 
-  select(-track_name)
-
-summary(spotify_cluster)
+summary(spotify_clean)
 ```
 
 Since the ranges between each column to another varies a lot (max of duration_ms is 3631469 while max of valence is 0.9830), we need to scale the data.
 
 ```{r}
-
+spotify_clusternew <- spotify_clean %>% 
+  select_if(is.numeric) %>% 
+  scale() %>% 
+  as.data.frame()
 ```
 
-##Finding Optimum K
+##Finding Optimum K using elbow method
+```{r warning=FALSE, message=FALSE}
+library(factoextra)
+fviz_nbclust(spotify_clusternew, kmeans, method = "wss")
+```
+
+Based on the above graph, we can see that the most suitable k is 5. This is because the drop in the total within sum of square value from 5 to 6 is very low. The lower the within sum of square, the more tight each cluster it to its center.
+
+## Clustering and evaluation of cluster
+
 ```{r}
-
+set.seed(100)
+spotify_kmeans <- kmeans(spotify_clusternew, centers = 5)
 ```
 
+```{r fig.width=10, fig.height=10}
+fviz_cluster(spotify_kmeans, spotify_clusternew, ggtheme = theme_minimal())
+```
+
+```{r}
+spotify_kmeans$betweenss/spotify_kmeans$totss
+```
+
+According to the computation above, this cluster is still not very good because the ratio of its between sum of square value (the total distance between each centroid to the center of the whole data) to its total sum of square (the total distance of each data to the center of the whole data) is very low (the closer to 1, the better).
+
+##Tuning cluster
+
+In order to get a more favourable outcome, we will try to change the number of clusters.
+
+We will try with 8 since in the plot of the elbow method, it also has the least drop (from 8 clusters to 9) in total within sum of squares
+
+```{r}
+set.seed(100)
+spotify_kmeans2 <- kmeans(spotify_clusternew, centers = 8)
+```
+
+```{r fig.height=10, fig.width=10}
+fviz_cluster(spotify_kmeans2, spotify_clusternew, ggtheme = theme_minimal())
+```
+As we can see from the above diagram, the clusters have a lot of overlap. This may not be so good, so we can try a smaller number of clusters.
+
+```{r fig.height=10, fig.width=10}
+set.seed(100)
+spotify_kmeans3 <- kmeans(spotify_clusternew, centers = 3)
+fviz_cluster(spotify_kmeans3, spotify_clusternew, ggtheme = theme_minimal())
+```
+
+Evaluation of the two final clustering models in comparison to the original cluster model.
+
+```{r}
+spotify_kmeans$tot.withinss
+spotify_kmeans2$tot.withinss
+spotify_kmeans3$tot.withinss
+```
+
+A good model has a small total within sum of square. Since total within sum of square measures the total distance between each data in a cluster to its centroid, the smaller the value, the tighter the cluster is, making it more accurate in separating different songs.
+
+From this, we can see that the cluster model that has the least total within sum of square is the model that has 8 clusters. 
+
+```{r}
+spotify_kmeans$betweenss
+spotify_kmeans2$betweenss
+spotify_kmeans3$betweenss
+```
+
+A good model has a large between sum of square. Since between sum of square measures the total distance between each centroid of the clusters to the center of the data, the larger the value, the more distinct each cluster is to one another.
+
+From this, we can see that the cluster model that has the least between sum of square is the model that has 8 clusters.
+
+```{r}
+spotify_kmeans$betweenss/spotify_kmeans$totss
+spotify_kmeans2$betweenss/spotify_kmeans2$totss
+spotify_kmeans3$betweenss/spotify_kmeans3$totss
+```
+
+From this, we can see that the cluster model that has 8 clusters has a ratio of between sum of square to total sum of square that is closest to 1. 
+
+According to the 3 models, the best cluster model goes to the model that consists of 8 clusters, hence we will move forward with that model.
+
+# Purpose of clustering
+
+## Clustering profiling
+
+```{r fig.height=10, fig.width=10}
+spotify_clusternew %>% 
+  mutate(cluster = as.factor(spotify_kmeans2$cluster)) %>%
+  group_by(cluster) %>% 
+  summarise_all(mean) %>% 
+  pivot_longer(cols = -c(1), names_to = "type", values_to = "value") %>% #column besides cluster is transformed 
+  ggplot(aes(x = cluster, y = value, fill = cluster)) + 
+  geom_col() +
+  facet_wrap(~type) +
+  theme_minimal()
+```
+
+I have break down the clusters in terms of its characteristics so that we can better visualise the different characteristics of each cluster.
+
+From this, we can see that cluster 6 songs have very long average duration as compared to songs in other clusters. Cluster 6 also has the highest average speechiness score and lowest average popularity score as compared to songs in other clusters. On the other hand, cluster 1 songs have the highest average liveliness score as compared to songs in other clusters. Another interesting observation is the cluster 4 and 6 songs have very similar acousticness, energy, loudness and popularity scores, though they differ greatly in terms of duration and danceability score.
 
 
+## Song recommendation
+
+```{r}
+spotify_clusternew %>% 
+  mutate(cluster = as.factor(spotify_kmeans2$cluster)) %>% 
+  mutate(track = as.factor(spotify_clean$track_name)) %>% 
+  group_by(cluster) %>% 
+  arrange(cluster) %>% 
+  filter(cluster == "1") %>% 
+  select_if(negate(is.numeric))
+```
+
+For example, if a user of Spotify were to like the song "But pour Rudy" a lot, Spotify would be able to recommend him/her songs that are in the same cluster as "But pour Rudy", such as "Flawless Remix" or "Remember Me (Dúo)". 
+
+Similarly, if a user of Spotify were to like a song in another cluster, Spotify would be able to use this algorithm to predict songs that suit the user's taste (songs that are in the same cluster as the user's favourite song).
 
